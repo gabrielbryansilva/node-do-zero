@@ -29,61 +29,73 @@
 // Request Body é o corpo da requisição, ou seja, os dados que o usuário enviou para o servidor, por exemplo, quando o usuário envia um formulário, os dados do formulário vão estar no request body.
 
 import { fastify } from "fastify";
-//import { DatabaseMemory } from "./database-memory.js";
+import cors from "@fastify/cors";
 import { DatabasePostgres } from "./database-postgres.js";
 
-//forma de criar o servidor com fastify⬇️
 const server = fastify();
 
-//const database = new DatabaseMemory();
+// 👇 1. CORS — registra ANTES das rotas
+server.register(cors, { origin: "*" });
+
 const database = new DatabasePostgres();
 
-//Rotas⬇️
+// 👇 2. Rota de health check
+server.get("/", () => {
+  return { status: "ok", message: "API de vídeos no ar" };
+});
 
-server.post("/videos", async (request, reply) => {
+// 👇 3. Schema de validação (fica perto da rota que usa)
+const videoSchema = {
+  body: {
+    type: "object",
+    required: ["title", "description", "duration"],
+    properties: {
+      title: { type: "string", minLength: 1 },
+      description: { type: "string" },
+      duration: { type: "number", minimum: 1 },
+    },
+  },
+};
+
+// Rotas⬇️
+
+server.post("/videos", { schema: videoSchema }, async (request, reply) => {
   const { title, description, duration } = request.body;
 
-  await database.create({
-    title,
-    description,
-    duration,
-  });
+  await database.create({ title, description, duration });
 
   return reply.status(201).send("Vídeo criado com sucesso");
 });
 
 server.get("/videos", async (request) => {
   const search = request.query.search;
-
   const videos = await database.list(search);
-
   return videos;
 });
 
-server.put("/videos/:id", async (request, reply) => {
+server.put("/videos/:id", { schema: videoSchema }, async (request, reply) => {
   const videosId = request.params.id;
   const { title, description, duration } = request.body;
 
-  await database.update(videosId, {
-    title,
-    description,
-    duration,
-  });
+  await database.update(videosId, { title, description, duration });
 
-  return reply.status(204).send("Vídeo atualizado com sucesso");
+  return reply.status(204).send();
 });
 
 server.delete("/videos/:id", async (request, reply) => {
   const videosId = request.params.id;
-
   await database.delete(videosId);
-
-  return reply.status(204).send("Vídeo deletado com sucesso");
+  return reply.status(204).send();
 });
 
-//Rotas⬆️
+// Rotas⬆️
 
-//com o fastify, a forma de criar o servidor é diferente, usamos o listen passando um objeto com a porta⬇️
+// 👇 4. Error handler — fica DEPOIS das rotas, ANTES do listen
+server.setErrorHandler((error, request, reply) => {
+  console.error(error);
+  reply.status(500).send({ message: "Erro interno no servidor" });
+});
+
 server.listen({
   port: process.env.PORT ?? 3333,
   host: "0.0.0.0",
